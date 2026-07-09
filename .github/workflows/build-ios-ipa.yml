@@ -1,0 +1,122 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-ios-ipa.yml
+      - app.config.*
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - src/**
+      - packages/**
+      - plugins/**
+      - patches/**
+
+jobs:
+  build-ios-ipa:
+    name: Build unsigned IPA for AltStore
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    permissions:
+      contents: read
+
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      RCT_NEW_ARCH_ENABLED: '1'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.26.2 --activate
+          pnpm --version
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate native iOS project
+        run: pnpm exec expo prebuild --platform ios --clean --no-install --non-interactive
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Build unsigned iOS app
+        run: |
+          set -euo pipefail
+
+          WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          if [ -z "$WORKSPACE" ]; then
+            echo "No .xcworkspace found under ios/."
+            exit 1
+          fi
+
+          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | ruby -rjson -e 'data = JSON.parse(STDIN.read); schemes = data.dig("workspace", "schemes") || []; puts(schemes.find { |s| s !~ /Pods/ } || schemes.first)')"
+          if [ -z "$SCHEME" ]; then
+            echo "No Xcode scheme found."
+            exit 1
+          fi
+
+          echo "Workspace: $WORKSPACE"
+          echo "Scheme: $SCHEME"
+
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            EXPANDED_CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            PROVISIONING_PROFILE_SPECIFIER='' \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in Release-iphoneos output."
+            find build/DerivedData/Build/Products -maxdepth 3 -type d -name '*.app' -print || true
+            exit 1
+          fi
+
+          echo "App bundle: $APP_PATH"
+
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+
+          cd build/ipa
+          zip -qry ../CherryStudio-unsigned.ipa Payload
+          cd ../..
+
+          unzip -l build/CherryStudio-unsigned.ipa | head -50
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CherryStudio-unsigned-ipa
+          path: build/CherryStudio-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
