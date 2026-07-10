@@ -30,6 +30,7 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
       RCT_NEW_ARCH_ENABLED: '1'
       LOG_DIR: build/logs
+      APP_SCHEME: CherryStudio
 
     defaults:
       run:
@@ -49,6 +50,7 @@ jobs:
             echo "SHA: $GITHUB_SHA"
             echo "Runner: $RUNNER_OS $RUNNER_ARCH"
             echo "Workspace: $GITHUB_WORKSPACE"
+            echo "Requested app scheme: $APP_SCHEME"
             echo
             echo "Disk space:"
             df -h
@@ -176,9 +178,14 @@ jobs:
             exit 1
           fi
 
-          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | ruby -rjson -e 'data = JSON.parse(STDIN.read); schemes = data.dig("workspace", "schemes") || []; puts(schemes.find { |s| s !~ /Pods/ } || schemes.first)')"
-          if [ -z "$SCHEME" ]; then
-            echo "No Xcode scheme found." | tee "$LOG_DIR/09-xcodebuild-summary.log"
+          SCHEME="$APP_SCHEME"
+          if ! xcodebuild -list -json -workspace "$WORKSPACE" | APP_SCHEME="$SCHEME" ruby -rjson -e 'data = JSON.parse(STDIN.read); schemes = data.dig("workspace", "schemes") || []; exit(schemes.include?(ENV.fetch("APP_SCHEME")) ? 0 : 1)'; then
+            {
+              echo "Requested app scheme '$SCHEME' was not found in $WORKSPACE."
+              echo
+              echo "Available schemes:"
+              xcodebuild -list -workspace "$WORKSPACE" || true
+            } | tee "$LOG_DIR/09-xcodebuild-summary.log"
             exit 1
           fi
 
@@ -238,10 +245,14 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          APP_PATH="$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)"
+          APP_PATH="$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 2 -name '*.app' -print -quit)"
           if [ -z "$APP_PATH" ]; then
-            echo "No .app found in Release-iphoneos output."
-            find build/DerivedData/Build/Products -maxdepth 5 -type d -name '*.app' -print || true
+            {
+              echo "No .app found in Release-iphoneos output."
+              echo
+              echo "Build products:"
+              find build/DerivedData/Build/Products -maxdepth 6 -print || true
+            } 2>&1 | tee "$LOG_DIR/12-package-failure.log"
             exit 1
           fi
 
