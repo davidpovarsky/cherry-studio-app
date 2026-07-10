@@ -100,7 +100,10 @@ jobs:
       - name: Install JS dependencies
         run: |
           set -Eeuo pipefail
-          pnpm install --frozen-lockfile --reporter append-only 2>&1 | tee "$LOG_DIR/03-pnpm-install.log"
+          echo "Installing JS dependencies. Full log: $LOG_DIR/03-pnpm-install.log"
+          pnpm install --frozen-lockfile --reporter append-only > "$LOG_DIR/03-pnpm-install.log" 2>&1
+          echo "pnpm install completed. Last 80 log lines:"
+          tail -80 "$LOG_DIR/03-pnpm-install.log"
 
       - name: Log package and Expo config
         run: |
@@ -119,7 +122,10 @@ jobs:
       - name: Generate native iOS project
         run: |
           set -Eeuo pipefail
-          pnpm exec expo prebuild --platform ios --clean --no-install --non-interactive 2>&1 | tee "$LOG_DIR/05-expo-prebuild.log"
+          echo "Generating native iOS project. Full log: $LOG_DIR/05-expo-prebuild.log"
+          pnpm exec expo prebuild --platform ios --clean --no-install --non-interactive > "$LOG_DIR/05-expo-prebuild.log" 2>&1
+          echo "expo prebuild completed. Last 120 log lines:"
+          tail -120 "$LOG_DIR/05-expo-prebuild.log"
 
       - name: Inspect generated iOS project
         if: always()
@@ -142,11 +148,14 @@ jobs:
       - name: Install CocoaPods dependencies
         run: |
           set -Eeuo pipefail
+          echo "Installing CocoaPods dependencies. Full log: $LOG_DIR/07-pod-install.log"
           {
             cd ios
             echo "Running pod install in $(pwd)"
             pod install --repo-update
-          } 2>&1 | tee "$LOG_DIR/07-pod-install.log"
+          } > "$LOG_DIR/07-pod-install.log" 2>&1
+          echo "pod install completed. Last 120 log lines:"
+          tail -120 "$LOG_DIR/07-pod-install.log"
 
       - name: Inspect Pods and Xcode schemes
         if: always()
@@ -210,6 +219,9 @@ jobs:
               | grep -E 'PRODUCT_BUNDLE_IDENTIFIER|PRODUCT_NAME|SDKROOT|IPHONEOS_DEPLOYMENT_TARGET|CODE_SIGN|DEVELOPMENT_TEAM|PROVISIONING_PROFILE|TARGET_BUILD_DIR|WRAPPER_NAME' || true
           } 2>&1 | tee "$LOG_DIR/09-xcodebuild-settings.log"
 
+          echo "Starting xcodebuild. Full log will be stored at $LOG_DIR/10-xcodebuild-full.log"
+          echo "Only a short heartbeat is printed here to avoid GitHub log truncation."
+
           set +e
           xcodebuild \
             -workspace "$WORKSPACE" \
@@ -225,8 +237,22 @@ jobs:
             EXPANDED_CODE_SIGN_IDENTITY='' \
             DEVELOPMENT_TEAM='' \
             PROVISIONING_PROFILE_SPECIFIER='' \
-            build 2>&1 | tee "$LOG_DIR/10-xcodebuild-full.log"
-          BUILD_STATUS=${PIPESTATUS[0]}
+            build > "$LOG_DIR/10-xcodebuild-full.log" 2>&1 &
+          BUILD_PID=$!
+
+          while kill -0 "$BUILD_PID" 2>/dev/null; do
+            sleep 60
+            if kill -0 "$BUILD_PID" 2>/dev/null; then
+              echo "xcodebuild still running at $(date -u '+%Y-%m-%dT%H:%M:%SZ'). Full log is being written to $LOG_DIR/10-xcodebuild-full.log"
+              if [ -s "$LOG_DIR/10-xcodebuild-full.log" ]; then
+                echo "Recent xcodebuild log tail:"
+                tail -20 "$LOG_DIR/10-xcodebuild-full.log" | sed -n '1,20p'
+              fi
+            fi
+          done
+
+          wait "$BUILD_PID"
+          BUILD_STATUS=$?
           set -e
 
           {
