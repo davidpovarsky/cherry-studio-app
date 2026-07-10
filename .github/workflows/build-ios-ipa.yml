@@ -29,52 +29,181 @@ jobs:
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
       RCT_NEW_ARCH_ENABLED: '1'
+      LOG_DIR: build/logs
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Prepare diagnostics
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$LOG_DIR"
+          {
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Ref: $GITHUB_REF"
+            echo "SHA: $GITHUB_SHA"
+            echo "Runner: $RUNNER_OS $RUNNER_ARCH"
+            echo "Workspace: $GITHUB_WORKSPACE"
+            echo
+            echo "Disk space:"
+            df -h
+            echo
+            echo "Root files:"
+            ls -la
+          } 2>&1 | tee "$LOG_DIR/00-runner-context.log"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      - name: Log tool versions
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "Node: $(node --version)"
+            echo "npm: $(npm --version)"
+            echo "Ruby: $(ruby --version)"
+            echo "Gem: $(gem --version)"
+            echo "Bundler: $(bundle --version || true)"
+            echo "CocoaPods: $(pod --version || true)"
+            echo
+            echo "Xcode version:"
+            xcodebuild -version
+            echo
+            echo "Available Xcodes:"
+            ls -la /Applications | grep -i xcode || true
+            echo
+            echo "Selected developer dir:"
+            xcode-select -p
+            echo
+            echo "iOS SDKs:"
+            xcodebuild -showsdks | sed -n '/iOS/,$p'
+          } 2>&1 | tee "$LOG_DIR/01-tool-versions.log"
+
       - name: Enable pnpm
         run: |
-          corepack enable
-          corepack prepare pnpm@10.26.2 --activate
-          pnpm --version
+          set -Eeuo pipefail
+          {
+            corepack enable
+            corepack prepare pnpm@10.26.2 --activate
+            echo "pnpm: $(pnpm --version)"
+          } 2>&1 | tee "$LOG_DIR/02-enable-pnpm.log"
 
       - name: Install JS dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile --reporter append-only 2>&1 | tee "$LOG_DIR/03-pnpm-install.log"
+
+      - name: Log package and Expo config
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "package.json scripts:"
+            node -e "const p=require('./package.json'); console.log(JSON.stringify(p.scripts,null,2))"
+            echo
+            echo "Expo config:"
+            pnpm exec expo config --json || true
+            echo
+            echo "pnpm workspace packages:"
+            pnpm list --depth -1 --recursive || true
+          } 2>&1 | tee "$LOG_DIR/04-package-expo-config.log"
 
       - name: Generate native iOS project
-        run: pnpm exec expo prebuild --platform ios --clean --no-install --non-interactive
+        run: |
+          set -Eeuo pipefail
+          pnpm exec expo prebuild --platform ios --clean --no-install --non-interactive 2>&1 | tee "$LOG_DIR/05-expo-prebuild.log"
+
+      - name: Inspect generated iOS project
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "Generated ios directory:"
+            find ios -maxdepth 3 -print | sort || true
+            echo
+            echo "Xcode workspaces:"
+            find ios -maxdepth 2 -name '*.xcworkspace' -print || true
+            echo
+            echo "Xcode projects:"
+            find ios -maxdepth 2 -name '*.xcodeproj' -print || true
+            echo
+            echo "Podfile:"
+            sed -n '1,260p' ios/Podfile || true
+          } 2>&1 | tee "$LOG_DIR/06-ios-project-inspection.log"
 
       - name: Install CocoaPods dependencies
         run: |
-          cd ios
-          pod install --repo-update
+          set -Eeuo pipefail
+          {
+            cd ios
+            echo "Running pod install in $(pwd)"
+            pod install --repo-update
+          } 2>&1 | tee "$LOG_DIR/07-pod-install.log"
+
+      - name: Inspect Pods and Xcode schemes
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "Podfile.lock summary:"
+            sed -n '1,220p' ios/Podfile.lock || true
+            echo
+            WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit || true)"
+            if [ -n "$WORKSPACE" ]; then
+              echo "xcodebuild -list for $WORKSPACE:"
+              xcodebuild -list -workspace "$WORKSPACE" || true
+              echo
+              echo "xcodebuild -list -json for $WORKSPACE:"
+              xcodebuild -list -json -workspace "$WORKSPACE" || true
+            else
+              echo "No workspace found."
+            fi
+          } 2>&1 | tee "$LOG_DIR/08-pods-and-schemes.log"
 
       - name: Build unsigned iOS app
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
           WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
           if [ -z "$WORKSPACE" ]; then
-            echo "No .xcworkspace found under ios/."
+            echo "No .xcworkspace found under ios/." | tee "$LOG_DIR/09-xcodebuild-summary.log"
             exit 1
           fi
 
           SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | ruby -rjson -e 'data = JSON.parse(STDIN.read); schemes = data.dig("workspace", "schemes") || []; puts(schemes.find { |s| s !~ /Pods/ } || schemes.first)')"
           if [ -z "$SCHEME" ]; then
-            echo "No Xcode scheme found."
+            echo "No Xcode scheme found." | tee "$LOG_DIR/09-xcodebuild-summary.log"
             exit 1
           fi
 
-          echo "Workspace: $WORKSPACE"
-          echo "Scheme: $SCHEME"
+          {
+            echo "Workspace: $WORKSPACE"
+            echo "Scheme: $SCHEME"
+            echo
+            echo "Build settings excerpt:"
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -showBuildSettings \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY='' \
+              EXPANDED_CODE_SIGN_IDENTITY='' \
+              DEVELOPMENT_TEAM='' \
+              PROVISIONING_PROFILE_SPECIFIER='' \
+              | grep -E 'PRODUCT_BUNDLE_IDENTIFIER|PRODUCT_NAME|SDKROOT|IPHONEOS_DEPLOYMENT_TARGET|CODE_SIGN|DEVELOPMENT_TEAM|PROVISIONING_PROFILE|TARGET_BUILD_DIR|WRAPPER_NAME' || true
+          } 2>&1 | tee "$LOG_DIR/09-xcodebuild-settings.log"
 
+          set +e
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -82,26 +211,55 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
+            -resultBundlePath "$LOG_DIR/Build.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
             EXPANDED_CODE_SIGN_IDENTITY='' \
             DEVELOPMENT_TEAM='' \
             PROVISIONING_PROFILE_SPECIFIER='' \
-            build
+            build 2>&1 | tee "$LOG_DIR/10-xcodebuild-full.log"
+          BUILD_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo "xcodebuild exit status: $BUILD_STATUS"
+            echo
+            echo "Important error lines:"
+            grep -nE "error:|fatal error:|warning:|BUILD FAILED|The following build commands failed|No profiles|Provisioning profile|requires a development team|Command PhaseScriptExecution failed|CompileC|SwiftCompile|Ld " "$LOG_DIR/10-xcodebuild-full.log" | tail -300 || true
+            echo
+            echo "Last 220 lines of xcodebuild log:"
+            tail -220 "$LOG_DIR/10-xcodebuild-full.log" || true
+          } 2>&1 | tee "$LOG_DIR/11-xcodebuild-summary.log"
+
+          exit "$BUILD_STATUS"
 
       - name: Package IPA
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
           APP_PATH="$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$APP_PATH" ]; then
             echo "No .app found in Release-iphoneos output."
-            find build/DerivedData/Build/Products -maxdepth 3 -type d -name '*.app' -print || true
+            find build/DerivedData/Build/Products -maxdepth 5 -type d -name '*.app' -print || true
             exit 1
           fi
 
-          echo "App bundle: $APP_PATH"
+          {
+            echo "App bundle: $APP_PATH"
+            echo
+            echo "App bundle files:"
+            find "$APP_PATH" -maxdepth 2 -print | sort | sed -n '1,300p'
+            echo
+            echo "Info.plist excerpt:"
+            plutil -p "$APP_PATH/Info.plist" | sed -n '1,220p' || true
+            echo
+            echo "Embedded provisioning profiles:"
+            find "$APP_PATH" -name 'embedded.mobileprovision' -print || true
+            echo
+            echo "Code signature folders:"
+            find "$APP_PATH" -name '_CodeSignature' -type d -print || true
+          } 2>&1 | tee "$LOG_DIR/12-app-bundle-inspection.log"
 
           rm -rf build/ipa
           mkdir -p build/ipa/Payload
@@ -111,7 +269,7 @@ jobs:
           zip -qry ../CherryStudio-unsigned.ipa Payload
           cd ../..
 
-          unzip -l build/CherryStudio-unsigned.ipa | head -50
+          unzip -l build/CherryStudio-unsigned.ipa | tee "$LOG_DIR/13-ipa-contents.log"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -119,4 +277,15 @@ jobs:
           name: CherryStudio-unsigned-ipa
           path: build/CherryStudio-unsigned.ipa
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CherryStudio-build-logs
+          path: |
+            build/logs/**
+            ios/Podfile.lock
+          if-no-files-found: warn
           retention-days: 14
