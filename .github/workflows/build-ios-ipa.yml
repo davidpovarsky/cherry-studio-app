@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 120
 
     permissions:
+      actions: read
       contents: read
 
     env:
@@ -37,9 +38,25 @@ jobs:
         shell: bash
 
     steps:
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Prepare diagnostics
         run: |
           set -Eeuo pipefail
@@ -59,11 +76,27 @@ jobs:
             ls -la
           } 2>&1 | tee "$LOG_DIR/00-runner-context.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Log tool versions
         run: |
           set -Eeuo pipefail
@@ -88,6 +121,14 @@ jobs:
             xcodebuild -showsdks | sed -n '/iOS/,$p'
           } 2>&1 | tee "$LOG_DIR/01-tool-versions.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Enable pnpm
         run: |
           set -Eeuo pipefail
@@ -97,6 +138,14 @@ jobs:
             echo "pnpm: $(pnpm --version)"
           } 2>&1 | tee "$LOG_DIR/02-enable-pnpm.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Install JS dependencies
         run: |
           set -Eeuo pipefail
@@ -105,6 +154,14 @@ jobs:
           echo "pnpm install completed. Last 80 log lines:"
           tail -80 "$LOG_DIR/03-pnpm-install.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Log package and Expo config
         run: |
           set -Eeuo pipefail
@@ -119,6 +176,14 @@ jobs:
             pnpm list --depth -1 --recursive || true
           } 2>&1 | tee "$LOG_DIR/04-package-expo-config.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Generate native iOS project
         run: |
           set -Eeuo pipefail
@@ -127,6 +192,15 @@ jobs:
           echo "expo prebuild completed. Last 120 log lines:"
           tail -120 "$LOG_DIR/05-expo-prebuild.log"
 
+      - name: Live Activity · refresh
+        if: always()
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Inspect generated iOS project
         if: always()
         run: |
@@ -145,6 +219,14 @@ jobs:
             sed -n '1,260p' ios/Podfile || true
           } 2>&1 | tee "$LOG_DIR/06-ios-project-inspection.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Install CocoaPods dependencies
         run: |
           set -Eeuo pipefail
@@ -157,6 +239,15 @@ jobs:
           echo "pod install completed. Last 120 log lines:"
           tail -120 "$LOG_DIR/07-pod-install.log"
 
+      - name: Live Activity · refresh
+        if: always()
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Inspect Pods and Xcode schemes
         if: always()
         run: |
@@ -177,6 +268,14 @@ jobs:
             fi
           } 2>&1 | tee "$LOG_DIR/08-pods-and-schemes.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Build unsigned iOS app
         run: |
           set -Eeuo pipefail
@@ -267,6 +366,14 @@ jobs:
 
           exit "$BUILD_STATUS"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Package IPA
         run: |
           set -Eeuo pipefail
@@ -308,6 +415,14 @@ jobs:
 
           unzip -l build/CherryStudio-unsigned.ipa | tee "$LOG_DIR/13-ipa-contents.log"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
@@ -316,6 +431,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Live Activity · refresh
+        if: always()
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
