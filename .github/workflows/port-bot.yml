@@ -1,6 +1,7 @@
 name: Port Bot - aiCore Changes
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -21,17 +22,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Checkout current repository
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '20'
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Install ast-grep
         run: |
           echo "📦 Installing ast-grep for precise code transformations..."
@@ -44,6 +69,14 @@ jobs:
 
           echo "✅ ast-grep installed successfully"
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Get last ported commit
         id: last-port
         run: |
@@ -63,6 +96,14 @@ jobs:
           echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
           echo "last_commit_display=${LAST_COMMIT:0:7}" >> $GITHUB_OUTPUT
 
+      - name: Live Activity · refresh
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Check for upstream changes
         id: check-changes
         run: |
@@ -99,6 +140,15 @@ jobs:
             echo "   New commits: $COMMIT_COUNT"
           fi
 
+      - name: Live Activity · refresh
+        if: steps.check-changes.outputs.has_changes == 'true'
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Create Copilot Agent task
         if: steps.check-changes.outputs.has_changes == 'true'
         run: |
@@ -211,6 +261,15 @@ jobs:
           echo "🤖 Agent will handle: fetch, diff, transform, port, lint, PR"
           echo "📍 Monitor: https://github.com/${{ github.repository }}/pulls"
 
+      - name: Live Activity · refresh
+        if: always()
+        uses: davidpovarsky/github-automation/live-refresh@main
+        continue-on-error: true
+        with:
+          event: refresh
+          device_id: ${{ secrets.NOTIFY_DEVICE_ID }}
+          token: ${{ secrets.NOTIFY_DEVICE_TOKEN }}
+          github_token: ${{ github.token }}
       - name: Summary
         if: always()
         run: |
